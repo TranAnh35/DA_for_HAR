@@ -119,12 +119,54 @@ def train(args):
 
     history = []
     best_target_f1 = 0.0
+    start_epoch = 1
+
+    # Checkpoint paths
+    prefix = f"{args.mode}_{args.dataset}"
+    if args.dataset == "pamap2":
+        prefix = f"{prefix}_{getattr(args, 'source_position', 'chest')}_to_{getattr(args, 'target_position', 'wrist')}"
+    elif args.dataset == "hhar":
+        prefix = f"{prefix}_{getattr(args, 'source_device', 's3')}_to_{getattr(args, 'target_device', 'nexus4')}"
+
+    last_ckpt_path = f"checkpoints/last_{prefix}.pt"
+    best_ckpt_path = f"checkpoints/best_{prefix}.pt"
+    log_file = f"results/{prefix}_history.json"
+
+    # Resume logic
+    resume_target = args.resume_path
+    if not resume_target and args.resume:
+        if os.path.exists(last_ckpt_path):
+            resume_target = last_ckpt_path
+        elif os.path.exists(best_ckpt_path):
+            resume_target = best_ckpt_path
+
+    if resume_target and os.path.exists(resume_target):
+        print(f"🔄 Đang khôi phục quá trình huấn luyện từ: {resume_target} ...")
+        checkpoint = torch.load(resume_target, map_location=device)
+        if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
+            model.load_state_dict(checkpoint["model_state_dict"])
+            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            if "scheduler_state_dict" in checkpoint and checkpoint["scheduler_state_dict"] is not None:
+                scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+            start_epoch = checkpoint["epoch"] + 1
+            best_target_f1 = checkpoint.get("best_target_f1", 0.0)
+            history = checkpoint.get("history", [])
+            print(f"✅ Khôi phục thành công! Tiếp tục từ Epoch {start_epoch} (Best Target F1 trước đó: {best_target_f1:.2f}%)")
+        else:
+            model.load_state_dict(checkpoint)
+            print(f"✅ Khôi phục model weights từ raw checkpoint! (Bắt đầu từ Epoch 1)")
+    elif args.resume:
+        print(f"⚠️ Không tìm thấy checkpoint tại '{last_ckpt_path}'. Bắt đầu huấn luyện mới từ Epoch 1.")
+
+    if start_epoch > args.epochs:
+        print(f"✅ Mô hình đã hoàn thành đủ {args.epochs} epochs trước đó. Không cần huấn luyện thêm.")
+        return
 
     print("\n" + "=" * 78)
     print(f"{'Epoch':^7} | {'Total Loss':^10} | {'Src CE':^8} | {'Gauge Loss':^10} | {'Tgt Acc (%)':^11} | {'Tgt F1 (%)':^11} | {'Time':^6}")
     print("=" * 78)
 
-    for epoch in range(1, args.epochs + 1):
+    for epoch in range(start_epoch, args.epochs + 1):
         model.train()
         start_time = time.time()
 
@@ -179,7 +221,6 @@ def train(args):
         is_best = tgt_f1 > best_target_f1
         if is_best:
             best_target_f1 = tgt_f1
-            torch.save(model.state_dict(), f"checkpoints/best_{args.mode}_{args.dataset}.pt")
 
         history.append({
             "epoch": epoch,
@@ -190,16 +231,33 @@ def train(args):
             "target_macro_f1": tgt_f1
         })
 
+        # Save checkpoint dictionary containing full training state
+        checkpoint_data = {
+            "epoch": epoch,
+            "model_state_dict": model.state_dict(),
+            "optimizer_state_dict": optimizer.state_dict(),
+            "scheduler_state_dict": scheduler.state_dict(),
+            "best_target_f1": best_target_f1,
+            "history": history,
+            "args": vars(args)
+        }
+
+        # 1. Always save latest checkpoint (for resume)
+        torch.save(checkpoint_data, last_ckpt_path)
+
+        # 2. Save best checkpoint when target F1 improves
+        if is_best:
+            torch.save(checkpoint_data, best_ckpt_path)
+
+        # 3. Always update training log file every epoch
+        with open(log_file, "w", encoding="utf-8") as f:
+            json.dump(history, f, indent=2)
+
         best_mark = " ⭐" if is_best else ""
         print(f"{epoch:^7d} | {avg_total_loss:^10.4f} | {avg_src_loss:^8.4f} | {avg_gauge_loss:^10.4f} | {tgt_acc:^11.2f} | {tgt_f1:^11.2f}{best_mark} | {epoch_time:^5.1f}s")
 
     print("=" * 78)
     print(f"\n🎉 Huấn luyện hoàn tất! Best Target Macro-F1 ({args.mode.upper()}): {best_target_f1:.2f}%")
-
-    # Save training history
-    log_file = f"results/{args.mode}_{args.dataset}_history.json"
-    with open(log_file, "w", encoding="utf-8") as f:
-        json.dump(history, f, indent=2)
     print(f"📁 Lịch sử huấn luyện đã được lưu vào: {log_file}")
 
 if __name__ == "__main__":
@@ -221,6 +279,8 @@ if __name__ == "__main__":
     parser.add_argument("--target_device", type=str, default="nexus4", help="Thiết bị đích HHAR")
     parser.add_argument("--source_position", type=str, default="chest", help="Vị trí cảm biến nguồn PAMAP2 (chest, wrist, ankle)")
     parser.add_argument("--target_position", type=str, default="wrist", help="Vị trí cảm biến đích PAMAP2 (wrist, ankle, chest)")
+    parser.add_argument("--resume", action="store_true", help="Tiếp tục huấn luyện từ checkpoint gần nhất nếu có")
+    parser.add_argument("--resume_path", type=str, default=None, help="Đường dẫn trực tiếp tới file checkpoint để khôi phục")
     parser.add_argument("--seed", type=int, default=42)
 
     args = parser.parse_args()
