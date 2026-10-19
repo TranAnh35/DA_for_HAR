@@ -155,7 +155,7 @@ def train(args):
 
     if resume_target and os.path.exists(resume_target):
         print(f"🔄 Đang khôi phục quá trình huấn luyện từ: {resume_target} ...")
-        checkpoint = torch.load(resume_target, map_location=device)
+        checkpoint = torch.load(resume_target, map_location=device, weights_only=False)
         if isinstance(checkpoint, dict) and "model_state_dict" in checkpoint:
             model.load_state_dict(checkpoint["model_state_dict"])
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
