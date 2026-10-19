@@ -35,23 +35,26 @@ class GaugeInvariantUDALoss(nn.Module):
         # 1. Supervised loss on labeled source domain
         loss_src = self.ce_loss(logits_s, y_s)
 
-        # 2. Gauge-invariant Gram alignment
-        # Normalize features across embedding dimension
-        z_s_norm = F.normalize(z_s, p=2, dim=-1)
-        z_t_norm = F.normalize(z_t, p=2, dim=-1)
+        if z_t is None or logits_t is None or (self.lambda_gauge == 0.0 and self.lambda_ent == 0.0):
+            loss_gauge = torch.tensor(0.0, device=logits_s.device)
+            loss_ent = torch.tensor(0.0, device=logits_s.device)
+            total_loss = loss_src
+        else:
+            # 2. Gauge-invariant Gram alignment
+            z_s_norm = F.normalize(z_s, p=2, dim=-1)
+            z_t_norm = F.normalize(z_t, p=2, dim=-1)
 
-        # Inner product Gram matrices [d_feature, d_feature]
-        gram_s = torch.matmul(z_s_norm.T, z_s_norm) / float(z_s.size(0))
-        gram_t = torch.matmul(z_t_norm.T, z_t_norm) / float(z_t.size(0))
+            # Inner product Gram matrices [d_feature, d_feature]
+            gram_s = torch.matmul(z_s_norm.T, z_s_norm) / float(z_s.size(0))
+            gram_t = torch.matmul(z_t_norm.T, z_t_norm) / float(z_t.size(0))
+            loss_gauge = (gram_s - gram_t).pow(2).sum()
 
-        loss_gauge = (gram_s - gram_t).pow(2).sum()
+            # 3. Target conditional entropy minimization
+            probs_t = F.softmax(logits_t, dim=-1)
+            loss_ent = -torch.mean(torch.sum(probs_t * torch.log(probs_t + 1e-8), dim=-1))
 
-        # 3. Target conditional entropy minimization
-        probs_t = F.softmax(logits_t, dim=-1)
-        loss_ent = -torch.mean(torch.sum(probs_t * torch.log(probs_t + 1e-8), dim=-1))
-
-        # Total objective
-        total_loss = loss_src + self.lambda_gauge * loss_gauge + self.lambda_ent * loss_ent
+            # Total objective
+            total_loss = loss_src + self.lambda_gauge * loss_gauge + self.lambda_ent * loss_ent
 
         metrics = {
             "loss_total": total_loss.item(),

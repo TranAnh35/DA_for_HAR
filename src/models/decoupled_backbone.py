@@ -20,9 +20,11 @@ class DecoupledSTLieModel(nn.Module):
         d_state: int = 64,
         num_layers: int = 2,
         dropout: float = 0.1,
-        filter_window: int = 25
+        filter_window: int = 25,
+        use_projector: bool = True
     ):
         super().__init__()
+        self.use_projector = use_projector
         # 1. Spatial Canonicalization
         self.projector = CanonicalOrientationProjector(filter_window=filter_window)
 
@@ -51,7 +53,7 @@ class DecoupledSTLieModel(nn.Module):
         Extract pooled gauge-invariant latent features z [B, d_model * 2].
         """
         # Step 1: Spatial canonical projection
-        x_canon = self.projector(x)
+        x_canon = self.projector(x) if self.use_projector else x
 
         # Step 2: Temporal state-space evolution
         h = x_canon

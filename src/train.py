@@ -190,26 +190,30 @@ def train(args):
         gauge_loss_epoch = 0.0
         num_batches = 0
 
-        tgt_iter = iter(tgt_loader)
+        is_uda = (args.mode == "uda")
+        tgt_iter = iter(tgt_loader) if is_uda else None
 
         pbar = tqdm(src_loader, desc=f"Epoch {epoch:2d}/{args.epochs}", dynamic_ncols=True, leave=False)
         for src_x, src_y, _, _ in pbar:
-            try:
-                tgt_x, _, _, _ = next(tgt_iter)
-            except StopIteration:
-                tgt_iter = iter(tgt_loader)
-                tgt_x, _, _, _ = next(tgt_iter)
-
             src_x = src_x.to(device, non_blocking=True)
             src_y = src_y.to(device, non_blocking=True)
-            tgt_x = tgt_x.to(device, non_blocking=True)
 
             optimizer.zero_grad(set_to_none=True)
 
             # Forward passes with AMP
             with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
                 logits_s, z_s = model(src_x)
-                logits_t, z_t = model(tgt_x)
+                if is_uda:
+                    try:
+                        tgt_x, _, _, _ = next(tgt_iter)
+                    except StopIteration:
+                        tgt_iter = iter(tgt_loader)
+                        tgt_x, _, _, _ = next(tgt_iter)
+                    tgt_x = tgt_x.to(device, non_blocking=True)
+                    logits_t, z_t = model(tgt_x)
+                else:
+                    logits_t, z_t = None, None
+
                 loss, loss_dict = criterion(logits_s, src_y, z_s, z_t, logits_t)
 
             scaler.scale(loss).backward()

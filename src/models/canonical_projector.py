@@ -15,7 +15,7 @@ class CanonicalOrientationProjector(nn.Module):
         # Smoothing kernel to extract low-frequency gravity component from total acceleration
         kernel = torch.ones(1, 1, filter_window) / filter_window
         self.register_buffer("kernel", kernel)
-        self.register_buffer("ez_ref", torch.tensor([0.0, 0.0, 1.0]).view(1, 3, 1))
+        self.register_buffer("ez_ref", torch.tensor([0.0, 0.0, 1.0]).view(1, 3, 1), persistent=False)
 
     def _estimate_gravity(self, acc: torch.Tensor) -> torch.Tensor:
         """
