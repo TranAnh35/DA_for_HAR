@@ -17,6 +17,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
+from tqdm import tqdm
 from src.data.uci_har_loader import load_uci_har
 from src.data.hhar_loader import load_hhar
 from src.data.pamap2_loader import load_pamap2
@@ -30,18 +31,20 @@ def set_seed(seed: int = 42):
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
 
-def evaluate(model: nn.Module, data_loader: DataLoader, device: torch.device) -> Dict[str, Any]:
+def evaluate(model: nn.Module, data_loader: DataLoader, device: torch.device, use_amp: bool = True) -> Dict[str, Any]:
     model.eval()
     all_preds = []
     all_targets = []
 
+    pbar_eval = tqdm(data_loader, desc="🔍 Đang đánh giá Target", leave=False, dynamic_ncols=True)
     with torch.no_grad():
-        for x, y, _, _ in data_loader:
-            x = x.to(device)
-            logits, _ = model(x)
-            preds = torch.argmax(logits, dim=-1)
-            all_preds.append(preds.cpu())
-            all_targets.append(y)
+        with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
+            for x, y, _, _ in pbar_eval:
+                x = x.to(device, non_blocking=True)
+                logits, _ = model(x)
+                preds = torch.argmax(logits, dim=-1)
+                all_preds.append(preds.cpu())
+                all_targets.append(y)
 
     all_preds = torch.cat(all_preds, dim=0)
     all_targets = torch.cat(all_targets, dim=0)
@@ -90,11 +93,16 @@ def train(args):
     else:
         raise NotImplementedError(f"Dataset {args.dataset} chưa được hỗ trợ.")
 
-    src_loader = DataLoader(src_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
-    tgt_loader = DataLoader(tgt_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True)
-    tgt_eval_loader = DataLoader(tgt_dataset, batch_size=args.batch_size, shuffle=False)
+    pin_mem = (device.type == "cuda")
+    if device.type == "cuda":
+        torch.backends.cudnn.benchmark = True
 
-    print(f"📊 Dữ liệu: Source={len(src_dataset)} mẫu ({len(src_loader)} batches) | Target={len(tgt_dataset)} mẫu ({len(tgt_eval_loader)} batches)")
+    eval_batch_size = getattr(args, "eval_batch_size", 256)
+    src_loader = DataLoader(src_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, pin_memory=pin_mem)
+    tgt_loader = DataLoader(tgt_dataset, batch_size=args.batch_size, shuffle=True, drop_last=True, pin_memory=pin_mem)
+    tgt_eval_loader = DataLoader(tgt_dataset, batch_size=eval_batch_size, shuffle=False, pin_memory=pin_mem)
+
+    print(f"📊 Dữ liệu: Source={len(src_dataset)} mẫu ({len(src_loader)} batches) | Target={len(tgt_dataset)} mẫu ({len(tgt_eval_loader)} batches, eval_bs={eval_batch_size})")
 
     # 2. Build Model
     model = DecoupledSTLieModel(
@@ -108,6 +116,11 @@ def train(args):
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=args.epochs, eta_min=1e-5)
+
+    use_amp = (device.type == "cuda") and not getattr(args, "no_amp", False)
+    scaler = torch.cuda.amp.GradScaler(enabled=use_amp)
+    if use_amp:
+        print("⚡ Đã kích hoạt Automatic Mixed Precision (AMP FP16) với Tensor Cores!")
 
     criterion = GaugeInvariantUDALoss(
         lambda_gauge=args.lambda_gauge if args.mode == "uda" else 0.0,
@@ -148,6 +161,8 @@ def train(args):
             optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
             if "scheduler_state_dict" in checkpoint and checkpoint["scheduler_state_dict"] is not None:
                 scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+            if "scaler_state_dict" in checkpoint and checkpoint["scaler_state_dict"] is not None and use_amp:
+                scaler.load_state_dict(checkpoint["scaler_state_dict"])
             start_epoch = checkpoint["epoch"] + 1
             best_target_f1 = checkpoint.get("best_target_f1", 0.0)
             history = checkpoint.get("history", [])
@@ -177,34 +192,45 @@ def train(args):
 
         tgt_iter = iter(tgt_loader)
 
-        for src_x, src_y, _, _ in src_loader:
+        pbar = tqdm(src_loader, desc=f"Epoch {epoch:2d}/{args.epochs}", dynamic_ncols=True, leave=False)
+        for src_x, src_y, _, _ in pbar:
             try:
                 tgt_x, _, _, _ = next(tgt_iter)
             except StopIteration:
                 tgt_iter = iter(tgt_loader)
                 tgt_x, _, _, _ = next(tgt_iter)
 
-            src_x = src_x.to(device)
-            src_y = src_y.to(device)
-            tgt_x = tgt_x.to(device)
+            src_x = src_x.to(device, non_blocking=True)
+            src_y = src_y.to(device, non_blocking=True)
+            tgt_x = tgt_x.to(device, non_blocking=True)
 
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
 
-            # Forward passes
-            logits_s, z_s = model(src_x)
-            logits_t, z_t = model(tgt_x)
+            # Forward passes with AMP
+            with torch.cuda.amp.autocast(enabled=use_amp, dtype=torch.float16):
+                logits_s, z_s = model(src_x)
+                logits_t, z_t = model(tgt_x)
+                loss, loss_dict = criterion(logits_s, src_y, z_s, z_t, logits_t)
 
-            loss, loss_dict = criterion(logits_s, src_y, z_s, z_t, logits_t)
-            loss.backward()
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
 
             # Gradient clipping for stable dynamics
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-            optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
 
-            total_loss_epoch += loss.item()
+            loss_val = loss.item()
+            total_loss_epoch += loss_val
             src_loss_epoch += loss_dict["loss_src"]
             gauge_loss_epoch += loss_dict["loss_gauge"]
             num_batches += 1
+
+            pbar.set_postfix({
+                "loss": f"{loss_val:.4f}",
+                "src": f"{loss_dict['loss_src']:.3f}",
+                "gauge": f"{loss_dict['loss_gauge']:.3f}"
+            })
 
         scheduler.step()
         epoch_time = time.time() - start_time
@@ -214,7 +240,7 @@ def train(args):
         avg_gauge_loss = gauge_loss_epoch / max(num_batches, 1)
 
         # Evaluate on Target Domain
-        tgt_metrics = evaluate(model, tgt_eval_loader, device)
+        tgt_metrics = evaluate(model, tgt_eval_loader, device, use_amp=use_amp)
         tgt_acc = tgt_metrics["accuracy"]
         tgt_f1 = tgt_metrics["macro_f1"]
 
@@ -237,6 +263,7 @@ def train(args):
             "model_state_dict": model.state_dict(),
             "optimizer_state_dict": optimizer.state_dict(),
             "scheduler_state_dict": scheduler.state_dict(),
+            "scaler_state_dict": scaler.state_dict() if use_amp else None,
             "best_target_f1": best_target_f1,
             "history": history,
             "args": vars(args)
@@ -279,6 +306,8 @@ if __name__ == "__main__":
     parser.add_argument("--target_device", type=str, default="nexus4", help="Thiết bị đích HHAR")
     parser.add_argument("--source_position", type=str, default="chest", help="Vị trí cảm biến nguồn PAMAP2 (chest, wrist, ankle)")
     parser.add_argument("--target_position", type=str, default="wrist", help="Vị trí cảm biến đích PAMAP2 (wrist, ankle, chest)")
+    parser.add_argument("--eval_batch_size", type=int, default=256, help="Kích thước batch khi đánh giá (mặc định: 256)")
+    parser.add_argument("--no_amp", action="store_true", help="Tắt Automatic Mixed Precision (AMP FP16)")
     parser.add_argument("--resume", action="store_true", help="Tiếp tục huấn luyện từ checkpoint gần nhất nếu có")
     parser.add_argument("--resume_path", type=str, default=None, help="Đường dẫn trực tiếp tới file checkpoint để khôi phục")
     parser.add_argument("--seed", type=int, default=42)

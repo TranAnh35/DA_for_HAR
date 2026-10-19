@@ -15,6 +15,7 @@ class CanonicalOrientationProjector(nn.Module):
         # Smoothing kernel to extract low-frequency gravity component from total acceleration
         kernel = torch.ones(1, 1, filter_window) / filter_window
         self.register_buffer("kernel", kernel)
+        self.register_buffer("ez_ref", torch.tensor([0.0, 0.0, 1.0]).view(1, 3, 1))
 
     def _estimate_gravity(self, acc: torch.Tensor) -> torch.Tensor:
         """
@@ -34,7 +35,7 @@ class CanonicalOrientationProjector(nn.Module):
         Uses numerically stable Rodrigues rotation formula.
         """
         B, _, T = v.shape
-        ez = torch.tensor([0.0, 0.0, 1.0], device=v.device, dtype=v.dtype).view(1, 3, 1).expand(B, 3, T)
+        ez = self.ez_ref.to(dtype=v.dtype, device=v.device).expand(B, 3, T)
 
         # Cross product axis: k = g_norm x ez
         k = torch.cross(g_norm, ez, dim=1) # [B, 3, T]

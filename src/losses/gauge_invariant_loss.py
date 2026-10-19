@@ -44,7 +44,7 @@ class GaugeInvariantUDALoss(nn.Module):
         gram_s = torch.matmul(z_s_norm.T, z_s_norm) / float(z_s.size(0))
         gram_t = torch.matmul(z_t_norm.T, z_t_norm) / float(z_t.size(0))
 
-        loss_gauge = torch.norm(gram_s - gram_t, p="fro") ** 2
+        loss_gauge = (gram_s - gram_t).pow(2).sum()
 
         # 3. Target conditional entropy minimization
         probs_t = F.softmax(logits_t, dim=-1)
