@@ -1,0 +1,15 @@
+# Cache
+__pycache__/
+*.py[cod]
+
+/.agents/
+/Data/
+/Documents/
+/Knowledge_Base/
+/Implementation_Graph/
+/results/
+/checkpoints/
+
+/build_graph.js
+/build_impl_graph.js
+/refresh_graph.ps1
