@@ -79,6 +79,7 @@ def train(args):
             step_size=64
         )
         num_classes = 6
+        in_channels = 6
     elif args.dataset == "pamap2":
         # Cross-Placement: Chest (Source) -> Wrist (Target)
         src_dataset, tgt_dataset = load_pamap2(
