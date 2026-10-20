@@ -39,12 +39,19 @@ def load_run_result(dataset: str, task: str, method: str, backbone: str, seed: i
     if os.path.exists(path):
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            return data.get("best_target_accuracy", 0.0), data.get("best_target_macro_f1", 0.0)
+        # Reject pre-fix target-oracle runs: they are not valid UDA evidence.
+        if data.get("is_target_oracle") is not False:
+            return None
+        if not data.get("selection") or data["selection"].get("uses_target_labels") is not False:
+            return None
+        return data.get("best_target_accuracy", 0.0), data.get("best_target_macro_f1", 0.0)
     return None
 
 def print_summary_tables(datasets, tasks_by_dataset, methods, backbones, seeds):
     print("\n" + "=" * 110)
     print("🏆 BẢNG TỔNG HỢP BENCHMARK TOÀN DIỆN (MULTI-METHOD, MULTI-DIRECTION, MULTI-SEED)")
+    print("   * Chỉ tổng hợp JSON post-fix (is_target_oracle=false, source-selected).")
+    print("   * Target metrics tại checkpoint được chọn bằng source-validation (không dùng nhãn target).")
     print("=" * 110)
 
     summary_data = {}
@@ -81,7 +88,7 @@ def print_summary_tables(datasets, tasks_by_dataset, methods, backbones, seeds):
                         acc_str = "Chưa có dữ liệu"
                         f1_str = "Chưa có dữ liệu"
 
-                    mark = " ⭐ [OURS]" if (method == "proposed" and bb == "st_lie") else ""
+                    mark = " ⭐ [OURS]" if (method == "proposed" and bb == "st_lie" and len(accs) > 0) else ""
                     print(f"{method.upper():<15} | {bb.upper():<10} | {acc_str:<24} | {f1_str:<24}{mark}")
 
     # Generate Publication Markdown and LaTeX tables
@@ -168,6 +175,14 @@ def main():
     parser.add_argument("--directions", nargs="+", default=["forward", "backward"])
     parser.add_argument("--epochs", type=int, default=15)
     parser.add_argument("--summary_only", action="store_true", help="Chỉ tổng hợp kết quả mà không chạy lại huấn luyện")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Chạy lại và ghi đè JSON đã có (dùng sau khi sửa protocol)")
+    parser.add_argument("--selection_metric", type=str, default="source_macro_f1",
+                        choices=["source_macro_f1", "source_loss", "source_accuracy"])
+    parser.add_argument("--val_fraction", type=float, default=0.2)
+    parser.add_argument("--pseudo_threshold", type=float, default=0.0)
+    parser.add_argument("--heading_mode", type=str, default="pca", choices=["none", "pca"])
+    parser.add_argument("--hhar_hz", type=float, default=100.0)
     args = parser.parse_args()
 
     tasks_by_dataset = {
@@ -185,8 +200,8 @@ def main():
                     for bb in args.backbones:
                         for seed in args.seeds:
                             result_path = f"results/benchmarks/{ds}_{task_name}_{method}_{bb}_seed{seed}.json"
-                            if os.path.exists(result_path):
-                                print(f"⏩ [Bỏ qua đã có] {result_path}")
+                            if os.path.exists(result_path) and not args.overwrite:
+                                print(f"⏩ [Bỏ qua đã có] {result_path} (dùng --overwrite để chạy lại)")
                                 continue
 
                             cmd = [
@@ -197,7 +212,12 @@ def main():
                                 "--backbone", bb,
                                 "--seed", str(seed),
                                 "--epochs", str(args.epochs),
-                                "--eval_batch_size", "256"
+                                "--eval_batch_size", "256",
+                                "--selection_metric", args.selection_metric,
+                                "--val_fraction", str(args.val_fraction),
+                                "--pseudo_threshold", str(args.pseudo_threshold),
+                                "--heading_mode", args.heading_mode,
+                                "--hhar_hz", str(args.hhar_hz),
                             ]
                             print(f"\n▶️ Đang chạy: {' '.join(cmd)}")
                             subprocess.run(cmd, check=True)

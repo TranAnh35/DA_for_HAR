@@ -7,9 +7,12 @@ __pycache__/
 /Documents/
 /Knowledge_Base/
 /Implementation_Graph/
+/Research_Graph/
 /results/
 /checkpoints/
 
+AGENTS.md
 /build_graph.js
 /build_impl_graph.js
 /refresh_graph.ps1
+build_research_graph.js

@@ -21,12 +21,22 @@ PAMAP2_ACTIVITY_MAP: Dict[int, int] = {
     24: 11  # rope jumping
 }
 
+# PAMAP2 column layout (0-indexed, 54 columns):
+#   0 timestamp, 1 activity, 2 heart rate,
+#   hand  (3 temp, 4-6 acc16, 7-9 acc6, 10-12 gyro, 13-15 mag, 16-19 orientation),
+#   chest (20 temp, 21-23 acc16, 24-26 acc6, 27-29 gyro, 30-32 mag, 33-36 orientation),
+#   ankle (37 temp, 38-40 acc16, 41-43 acc6, 44-46 gyro, 47-49 mag, 50-53 orientation).
+# Verified against subject101.dat; each IMU block has 17 columns including the
+# 4-value orientation quaternion. Do not "fix" these indices.
 POSITION_COLS: Dict[str, List[int]] = {
-    # 3D accel (+-16g) + 3D gyro
+    # 3D accelerometer (+-16g) + 3D gyroscope
     "wrist": [4, 5, 6, 10, 11, 12],
     "chest": [21, 22, 23, 27, 28, 29],
     "ankle": [38, 39, 40, 44, 45, 46]
 }
+
+# Bump when the segmentation protocol / column mapping changes.
+CACHE_VERSION = 2
 
 def process_subject_file(
     file_path: str,
@@ -35,7 +45,7 @@ def process_subject_file(
     target_cols: List[int],
     window_size: int = 128,
     step_size: int = 64
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Reads a single PAMAP2 subject .dat file and extracts synchronized windows for source & target positions.
     """
@@ -58,7 +68,7 @@ def process_subject_file(
     df = df[valid_mask].copy()
 
     if len(df) < window_size:
-        return np.empty((0, 6, window_size)), np.empty((0, 6, window_size)), np.empty((0,), dtype=int), np.empty((0,), dtype=int), np.empty((0,), dtype=int)
+        return np.empty((0, 6, window_size)), np.empty((0, 6, window_size)), np.empty((0,), dtype=int), np.empty((0,), dtype=int)
 
     # Interpolate NaNs
     df.interpolate(method='linear', limit_direction='both', inplace=True)
@@ -86,7 +96,7 @@ def process_subject_file(
             win_subjs.append(subject_id)
 
     if len(src_windows) == 0:
-        return np.empty((0, 6, window_size)), np.empty((0, 6, window_size)), np.empty((0,), dtype=int), np.empty((0,), dtype=int), np.empty((0,), dtype=int)
+        return np.empty((0, 6, window_size)), np.empty((0, 6, window_size)), np.empty((0,), dtype=int), np.empty((0,), dtype=int)
 
     return (
         np.array(src_windows, dtype=np.float32),
@@ -108,7 +118,11 @@ def load_pamap2(
     """
     cache_dir = os.path.join(data_dir, "cache")
     os.makedirs(cache_dir, exist_ok=True)
-    cache_file = os.path.join(cache_dir, f"pamap2_{source_position}_to_{target_position}_w{window_size}.npz")
+    cache_file = os.path.join(
+        cache_dir,
+        f"pamap2_{source_position}_to_{target_position}_w{window_size}"
+        f"_s{step_size}_v{CACHE_VERSION}.npz",
+    )
 
     if os.path.exists(cache_file):
         cached = np.load(cache_file)
@@ -124,7 +138,8 @@ def load_pamap2(
         all_labels = []
         all_subjs = []
 
-        subject_files = [f"subject10{i}.dat" for i in range(1, 9)] # subjects 101 to 108
+        # PAMAP2 Protocol contains subjects 101..109 (9 subjects).
+        subject_files = [f"subject10{i}.dat" for i in range(1, 10)]
 
         for subj_idx, s_file in enumerate(subject_files):
             f_path = os.path.join(protocol_dir, s_file)
@@ -138,6 +153,12 @@ def load_pamap2(
                 all_tgt_wins.append(tgt_w)
                 all_labels.append(lbls)
                 all_subjs.append(subjs)
+
+        if not all_src_wins:
+            raise ValueError(
+                f"No PAMAP2 windows found in {protocol_dir}. "
+                "Check that Protocol/subject101.dat ... subject109.dat exist."
+            )
 
         x_src = np.concatenate(all_src_wins, axis=0)
         x_tgt = np.concatenate(all_tgt_wins, axis=0)
@@ -155,6 +176,13 @@ def load_pamap2(
 
     x_src = (x_src - mean_src) / std_src
     x_tgt = (x_tgt - mean_src) / std_src
+
+    # Sanity check: the 12 protocol classes must all be present.  A missing
+    # class would make macro-F1 and adaptation comparisons misleading.
+    class_counts = np.bincount(y_all.astype(int), minlength=len(PAMAP2_ACTIVITY_MAP))
+    missing = np.where(class_counts == 0)[0]
+    if len(missing) > 0:
+        print(f"⚠️ PAMAP2: missing classes {missing.tolist()} (counts={class_counts.tolist()})")
 
     source_dataset = BaseHARDataset(
         data=torch.from_numpy(x_src),
