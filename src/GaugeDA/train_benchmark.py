@@ -17,20 +17,20 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
-from src.data.uci_har_loader import load_uci_har
-from src.data.hhar_loader import load_hhar
-from src.data.pamap2_loader import load_pamap2
-from src.models.decoupled_backbone import DecoupledSTLieModel
-from src.models.baseline_backbones import Standard1DCNN
-from src.losses.gauge_invariant_loss import GaugeInvariantUDALoss
-from src.losses.uda_baselines import (
+from src.GaugeDA.data.uci_har_loader import load_uci_har
+from src.GaugeDA.data.hhar_loader import load_hhar
+from src.GaugeDA.data.pamap2_loader import load_pamap2
+from src.GaugeDA.models.decoupled_backbone import DecoupledSTLieModel
+from src.GaugeDA.models.baseline_backbones import Standard1DCNN
+from src.GaugeDA.losses.gauge_invariant_loss import GaugeInvariantUDALoss
+from src.GaugeDA.losses.uda_baselines import (
     CORALLoss,
     MMDLoss,
     DANNLoss,
     CDANLoss,
     DomainDiscriminator
 )
-from src.utils.selection import (
+from src.GaugeDA.utils.selection import (
     evaluate,
     forward_model,
     is_improvement,

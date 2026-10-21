@@ -6,9 +6,9 @@ import unittest
 
 import torch
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
-from src.models.st_lie_operator import (
+from src.GaugeDA.models.st_lie_operator import (
     ContinuousSSMCell,
     STLieOperatorBlock,
     _as_dt_scale,

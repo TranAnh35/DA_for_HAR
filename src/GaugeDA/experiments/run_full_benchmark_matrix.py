@@ -205,7 +205,7 @@ def main():
                                 continue
 
                             cmd = [
-                                python_exec, "src/train_benchmark.py",
+                                python_exec, "src/GaugeDA/train_benchmark.py",
                                 "--dataset", ds,
                                 "--direction", direction,
                                 "--method", method,

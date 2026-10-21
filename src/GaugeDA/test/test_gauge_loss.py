@@ -6,9 +6,9 @@ import unittest
 
 import torch
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
-from src.losses.gauge_invariant_loss import GaugeInvariantUDALoss
+from src.GaugeDA.losses.gauge_invariant_loss import GaugeInvariantUDALoss
 
 
 class TestGaugeInvariantLoss(unittest.TestCase):

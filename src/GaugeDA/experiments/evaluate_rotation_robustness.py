@@ -21,11 +21,11 @@ if hasattr(sys.stdout, 'reconfigure'):
 
 sys.path.insert(0, os.path.abspath("."))
 
-from src.data.uci_har_loader import load_uci_har
-from src.data.pamap2_loader import load_pamap2
-from src.data.hhar_loader import load_hhar
-from src.models.decoupled_backbone import DecoupledSTLieModel
-from src.utils.metrics import compute_metrics
+from src.GaugeDA.data.uci_har_loader import load_uci_har
+from src.GaugeDA.data.pamap2_loader import load_pamap2
+from src.GaugeDA.data.hhar_loader import load_hhar
+from src.GaugeDA.models.decoupled_backbone import DecoupledSTLieModel
+from src.GaugeDA.utils.metrics import compute_metrics
 
 
 def generate_random_rotation_matrix(

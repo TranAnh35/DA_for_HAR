@@ -5,8 +5,8 @@ import subprocess
 import sys
 import unittest
 
-REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-TRAIN_SCRIPT = os.path.join(REPO_ROOT, "src", "train_benchmark.py")
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+TRAIN_SCRIPT = os.path.join(REPO_ROOT, "src", "GaugeDA", "train_benchmark.py")
 
 
 class TestNoProjectorFlag(unittest.TestCase):

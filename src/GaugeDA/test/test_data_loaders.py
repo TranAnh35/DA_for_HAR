@@ -8,10 +8,10 @@ import unittest
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
-from src.data.hhar_loader import ACTIVITY_MAP, _resample_user
-from src.data.pamap2_loader import process_subject_file
+from src.GaugeDA.data.hhar_loader import ACTIVITY_MAP, _resample_user
+from src.GaugeDA.data.pamap2_loader import process_subject_file
 
 
 def _hhar_frame(times_ns, label="walk"):

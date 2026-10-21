@@ -11,18 +11,18 @@ if hasattr(sys.stdout, 'reconfigure'):
 # Ensure src package is in path
 sys.path.insert(0, os.path.abspath("."))
 
-from src.data.uci_har_loader import load_uci_har
-from src.models.canonical_projector import CanonicalOrientationProjector
-from src.models.st_lie_operator import STLieOperatorBlock
-from src.models.decoupled_backbone import DecoupledSTLieModel
-from src.losses.gauge_invariant_loss import GaugeInvariantUDALoss
-from src.utils.metrics import compute_metrics
-from src.utils.selection import split_source_train_val
+from src.GaugeDA.data.uci_har_loader import load_uci_har
+from src.GaugeDA.models.canonical_projector import CanonicalOrientationProjector
+from src.GaugeDA.models.st_lie_operator import STLieOperatorBlock
+from src.GaugeDA.models.decoupled_backbone import DecoupledSTLieModel
+from src.GaugeDA.losses.gauge_invariant_loss import GaugeInvariantUDALoss
+from src.GaugeDA.utils.metrics import compute_metrics
+from src.GaugeDA.utils.selection import split_source_train_val
 
 
 def run_tests():
     print("=" * 66)
-    print("🚀 Bắt đầu Kiểm thử Toàn diện Pipeline src/ (da_har environment)")
+    print("🚀 Bắt đầu Kiểm thử Toàn diện Pipeline src/GaugeDA/ (da_har environment)")
     print("=" * 66)
 
     torch.manual_seed(42)

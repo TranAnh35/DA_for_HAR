@@ -7,9 +7,9 @@ import unittest
 import numpy as np
 import torch
 
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..")))
 
-from src.experiments.evaluate_rotation_robustness import (
+from src.GaugeDA.experiments.evaluate_rotation_robustness import (
     _build_model,
     generate_random_rotation_matrix,
 )

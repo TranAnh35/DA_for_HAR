@@ -18,7 +18,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, Subset
 
-from src.utils.metrics import compute_metrics
+from src.GaugeDA.utils.metrics import compute_metrics
 
 
 def split_source_train_val(

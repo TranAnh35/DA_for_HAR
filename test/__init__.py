@@ -1,6 +1,6 @@
-"""Unit tests for the DA-for-HAR implementation.
+"""Functional tests for the new DA-HAR data/benchmark layer.
 
-Run from the repository root:
+Run from the repository root::
 
-    python -m unittest discover -s test -v
+    conda run -n da_har python -m unittest discover -s test -v
 """
